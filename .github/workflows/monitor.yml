@@ -37,5 +37,6 @@ jobs:
         with:
           commit_message: Update events cache
           file_pattern: .
+          repository: https://${{ secrets.GITHUB_TOKEN }}@github.com/VMHengo/concert-monitor.git
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
