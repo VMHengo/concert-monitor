@@ -9,6 +9,7 @@ from email.header import decode_header, make_header
 
 URL = "https://bachtrack.com/de_DE/search-events/composer=101;region=146"
 DATA_FILE = "events.json"
+GMAIL_STATE_FILE = "gmail_state.json"
 
 DISCORD_WEBHOOK = os.getenv("DISCORD_WEBHOOK")
 
@@ -48,6 +49,25 @@ def save_events(events):
         json.dump(events, f)
 
 
+def load_last_gmail_uid():
+    if not os.path.exists(GMAIL_STATE_FILE):
+        return None
+    try:
+        with open(GMAIL_STATE_FILE) as f:
+            data = json.load(f)
+        return data.get("last_uid")
+    except Exception:
+        return None
+
+
+def save_last_gmail_uid(uid: int):
+    try:
+        with open(GMAIL_STATE_FILE, "w") as f:
+            json.dump({"last_uid": uid}, f)
+    except Exception:
+        pass
+
+
 def _decode_subject(raw_subject: str) -> str:
     try:
         return str(make_header(decode_header(raw_subject or "")))
@@ -60,19 +80,37 @@ def check_gmail_for_keyword(keyword: str):
         return []
 
     matches = []
+    last_uid = load_last_gmail_uid()
+
     mail = imaplib.IMAP4_SSL("imap.gmail.com")
     try:
         mail.login(GMAIL_USER, GMAIL_PASSWORD)
         mail.select("INBOX")
 
-        status, data = mail.search(None, "UNSEEN")
+        # Alle Nachrichten-UIDs im Posteingang holen
+        status, data = mail.uid("search", None, "ALL")
         if status != "OK":
             return []
 
-        ids = data[0].split()
+        raw_uids = data[0].split()
+        if not raw_uids:
+            return []
 
-        for msg_id in ids:
-            status, msg_data = mail.fetch(msg_id, "(RFC822)")
+        uids = sorted(int(x) for x in raw_uids)
+        max_uid = uids[-1]
+
+        # Beim allerersten Lauf nur den aktuellen Stand merken,
+        # aber keine alten Mails melden.
+        if last_uid is None:
+            save_last_gmail_uid(max_uid)
+            return []
+
+        new_uids = [uid for uid in uids if uid > last_uid]
+        if not new_uids:
+            return []
+
+        for uid in new_uids:
+            status, msg_data = mail.uid("fetch", str(uid), "(RFC822)")
             if status != "OK" or not msg_data:
                 continue
 
@@ -81,12 +119,15 @@ def check_gmail_for_keyword(keyword: str):
 
             if keyword.lower() in subject.lower():
                 matches.append(subject)
-                mail.store(msg_id, "+FLAGS", "\\Seen")
+                mail.store(str(uid), "+FLAGS", "\\Seen")
     finally:
         try:
             mail.logout()
         except Exception:
             pass
+
+    if matches and max_uid > (last_uid or 0):
+        save_last_gmail_uid(max_uid)
 
     return matches
 
