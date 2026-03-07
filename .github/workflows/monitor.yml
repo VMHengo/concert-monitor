@@ -33,3 +33,6 @@ jobs:
         uses: stefanzweifel/git-auto-commit-action@v5
         with:
           commit_message: Update events cache
+          file_pattern: .
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
