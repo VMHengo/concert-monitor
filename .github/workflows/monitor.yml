@@ -2,41 +2,52 @@ name: Concert Monitor
 
 on:
   schedule:
-    - cron: "*/15 * * * *"   # alle 15 Minuten
-  workflow_dispatch:
+    - cron: "*/15 * * * *"  # every 15 minutes
+  workflow_dispatch:        # allows manual run
 
 permissions:
-  contents: write
+  contents: write  # ensures GITHUB_TOKEN can push commits
 
 jobs:
   monitor:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Repository auschecken
+      # 1️⃣ Checkout repository with full history and credentials
+      - name: Checkout repository
         uses: actions/checkout@v4
         with:
-          fetch-depth: 0      # fetch full history
+          fetch-depth: 0          # full history to allow push
           persist-credentials: true  # use GITHUB_TOKEN for pushes
 
-      - name: Python installieren
+      # 2️⃣ Set up Python
+      - name: Setup Python 3.11
         uses: actions/setup-python@v5
         with:
           python-version: "3.11"
 
-      - name: Dependencies installieren
+      # 3️⃣ Install dependencies
+      - name: Install dependencies
         run: pip install -r requirements.txt
 
-      - name: Script ausführen
+      # 4️⃣ Run your Python script
+      - name: Run monitor.py
         env:
           DISCORD_WEBHOOK: ${{ secrets.DISCORD_WEBHOOK }}
         run: python monitor.py
 
-      - name: Event Cache speichern
+      # 5️⃣ Pull latest changes to avoid divergence
+      - name: Pull latest changes
+        run: git pull origin main --rebase
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      # 6️⃣ Commit and push changes
+      - name: Commit and push events.json
         uses: stefanzweifel/git-auto-commit-action@v5
         with:
           commit_message: Update events cache
-          file_pattern: .
-          repository: https://${{ secrets.GITHUB_TOKEN }}@github.com/VMHengo/concert-monitor.git
+          file_pattern: .          # commit all changes
+          skip_dirty_check: false
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
