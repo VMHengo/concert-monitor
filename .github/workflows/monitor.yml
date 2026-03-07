@@ -15,6 +15,9 @@ jobs:
     steps:
       - name: Repository auschecken
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0      # fetch full history
+          persist-credentials: true  # use GITHUB_TOKEN for pushes
 
       - name: Python installieren
         uses: actions/setup-python@v5
