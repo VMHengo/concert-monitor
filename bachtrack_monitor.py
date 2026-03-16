@@ -196,6 +196,16 @@ def run_listener(listener: Listener, state: dict) -> None:
 
     new = [e for e in all_events if e.url not in seen_for_listener]
     if not new:
+        # Nothing new → sende das zuletzt bekannte Event.
+        if seen_for_listener:
+            try:
+                last_url, last_info = next(reversed(seen_for_listener.items()))
+            except StopIteration:
+                return
+            title = str(last_info.get("title") or "").strip() or "(unbekannter Titel)"
+            program = str(last_info.get("program") or "")
+            last_event = EventRef(title=title, url=last_url)
+            send_discord(_discord_message(listener, last_event, program))
         return
 
     for e in new:
