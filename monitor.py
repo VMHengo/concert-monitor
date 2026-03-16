@@ -14,8 +14,6 @@ from bachtrack_monitor import main as bachtrack_main
 
 def main() -> None:
     bachtrack_main()
-    gmail_main()
-
 
 if __name__ == "__main__":
     main()

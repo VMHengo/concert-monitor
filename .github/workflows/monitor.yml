@@ -33,7 +33,7 @@ jobs:
       # 4️⃣ Run Bachtrack monitor
       - name: Run bachtrack_monitor.py
         env:
-          DISCORD_WEBHOOK: ${{ secrets.DISCORD_WEBHOOK }}
+          DISCORD_WEBHOOK_BACHTRACK: ${{ secrets.DISCORD_WEBHOOK_BACHTRACK }}
         run: python bachtrack_monitor.py
 
       # 5️⃣ Pull latest changes to avoid divergence
