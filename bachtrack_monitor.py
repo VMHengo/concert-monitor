@@ -41,6 +41,8 @@ class EventRef:
     title: str
     url: str
     listing_program: str = ""
+    venue: str = ""
+    date: str = ""
 
 
 LISTENERS: list[Listener] = [
@@ -56,27 +58,27 @@ LISTENERS: list[Listener] = [
     ),
     Listener(
         name="rachmaninoff",
-        url="https://bachtrack.com/de_DE/search-events/composer=85",
+        url="https://bachtrack.com/de_DE/search-events/composer=85;region=146",
         emoji="🎹",
     ),
     Listener(
         name="dvorak",
-        url="https://bachtrack.com/de_DE/search-events/composer=38",
+        url="https://bachtrack.com/de_DE/search-events/composer=38;region=146",
         emoji="🎹",
     ),
     Listener(
         name="ray_chen",
-        url="https://bachtrack.com/de_DE/search-events/performer=17568",
+        url="https://bachtrack.com/de_DE/search-events/performer=17568;region=146",
         emoji="🎻",
     ),
     Listener(
         name="hilary_hahn",
-        url="https://bachtrack.com/de_DE/search-events/performer=102",
+        url="https://bachtrack.com/de_DE/search-events/performer=102;region=146",
         emoji="🎻",
     ),
     Listener(
         name="holst_diePlaneten",
-        url="https://bachtrack.com/de_DE/search-events/work=7161",
+        url="https://bachtrack.com/de_DE/search-events/work=7161;region=146",
         emoji="🎹",
     ),
     # Example for adding more:
@@ -117,7 +119,13 @@ def _extract_events_from_search(html: str, search_url: str) -> list[EventRef]:
     candidates: list[EventRef] = []
     seen: set[str] = set()
 
-    def add_candidate(title: str, href: str, listing_program: str = "") -> None:
+    def add_candidate(
+        title: str,
+        href: str,
+        listing_program: str = "",
+        venue: str = "",
+        date: str = "",
+    ) -> None:
         title = (title or "").strip()
         if not title:
             return
@@ -127,21 +135,42 @@ def _extract_events_from_search(html: str, search_url: str) -> list[EventRef]:
         if url in seen:
             return
         seen.add(url)
-        candidates.append(EventRef(title=title, url=url, listing_program=(listing_program or "").strip()))
+        candidates.append(
+            EventRef(
+                title=title,
+                url=url,
+                listing_program=(listing_program or "").strip(),
+                venue=(venue or "").strip(),
+                date=(date or "").strip(),
+            )
+        )
 
     for card in soup.select(".listing-shortform"):
         title_el = card.select_one(".li-shortform-title")
         if not title_el:
             continue
         title = title_el.get_text(" ", strip=True)
+
+        date_el = card.select_one(".listing-shortform-dates")
+        date_text = date_el.get_text(strip=True) if date_el else ""
+
         listing_right = card.select_one(".listing-shortform-right")
         listing_program = listing_right.get_text(" ", strip=True) if listing_right else ""
+
+        venue_el = card.select_one("div.li-shortform-venue > h2")
+        venue_text = venue_el.get_text(strip=True) if venue_el else ""
+
         link = card.select_one("a[href*='-event/']")
         if not link:
-            link = card.select_one("a[href*='event/']")
-        if not link:
             continue
-        add_candidate(title, link.get("href") or "", listing_program=listing_program)
+
+        add_candidate(
+            title,
+            link.get("href") or "",
+            listing_program=listing_program,
+            venue=venue_text,
+            date=date_text
+        )
 
     if candidates:
         return candidates
@@ -322,11 +351,20 @@ def fetch_program(event_url: str) -> str:
 
 def _discord_message(listener: Listener, event: EventRef, program: str) -> str:
     title = (event.title or "").strip() or "(unbekannter Titel)"
+    venue = (event.venue or "").strip() # Sicherstellen, dass es nicht None ist
+    date = (event.date or "").strip()
+
+    # Debug: Print direkt vor dem Zusammenbau der Nachricht
+    print(f"DEBUG Discord Message: Venue is '{venue}'") 
+
     header = (
         f"{listener.emoji} *Neues Konzert* ({listener.name})\n"
         f"**{title}**\n"
+        f"📅 {date if date else 'Datum unbekannt'}\n"
+        f"📍 {venue if venue else 'Ort unbekannt'}\n"
         f"{event.url}"
     )
+    # ... restlicher Code
 
     # Allow short alerts without the (often long) program block.
     # Set BACHTRACK_DISCORD_INCLUDE_PROGRAM=0 to disable.
@@ -376,31 +414,42 @@ def run_listener(listener: Listener, state: dict) -> None:
         or not any("-event/" in str(k) or "/event/" in str(k) for k in seen_for_listener.keys())
     ):
         listeners_state[listener.name] = {
-            e.url: {"title": e.title, "listing_program": e.listing_program} for e in all_events
+            e.url: {
+                "title": e.title,
+                "listing_program": e.listing_program,
+                "venue": e.venue,
+            }
+            for e in all_events
         }
         print(f"[{listener.name}] initialized state with {len(all_events)} events (no alerts on first run)")
         return
 
     new = [e for e in all_events if e.url not in seen_for_listener]
     print(f"[{listener.name}] new events: {len(new)}")
-    if not new:
-        # Nothing new → sende das zuletzt bekannte Event.
-        if seen_for_listener:
-            try:
-                last_url, last_info = next(reversed(seen_for_listener.items()))
-            except StopIteration:
-                return
-            if "-event/" not in str(last_url):
-                print(
-                    f"[{listener.name}] last known url doesn't look like an *-event url, skipping test alert: {last_url}"
-                )
-                return
-            title = str(last_info.get("title") or "").strip() or "(unbekannter Titel)"
-            program = str(last_info.get("program") or "")
-            listing_program = str(last_info.get("listing_program") or "")
-            last_event = EventRef(title=title, url=last_url, listing_program=listing_program)
-            send_discord(_discord_message(listener, last_event, program))
-        return
+    # if not new:
+    #     # Nothing new → sende das zuletzt bekannte Event.
+    #     if seen_for_listener:
+    #         try:
+    #             last_url, last_info = next(reversed(seen_for_listener.items()))
+    #         except StopIteration:
+    #             return
+    #         if "-event/" not in str(last_url):
+    #             print(
+    #                 f"[{listener.name}] last known url doesn't look like an *-event url, skipping test alert: {last_url}"
+    #             )
+    #             return
+    #         title = str(last_info.get("title") or "").strip() or "(unbekannter Titel)"
+    #         program = str(last_info.get("program") or "")
+    #         listing_program = str(last_info.get("listing_program") or "")
+    #         venue = str(last_info.get("venue") or "")
+    #         last_event = EventRef(
+    #             title=title,
+    #             url=last_url,
+    #             listing_program=listing_program,
+    #             venue=str(last_info.get("venue") or ""),
+    #         )
+    #         send_discord(_discord_message(listener, last_event, program))
+    #     return
 
     for e in new:
         program = fetch_program(e.url)
@@ -409,7 +458,10 @@ def run_listener(listener: Listener, state: dict) -> None:
             "title": e.title,
             "listing_program": e.listing_program,
             "program": program,
+            "venue": e.venue,
+            "date": e.date
         }
+        print(f"seen_for_listener: {seen_for_listener}")
 
 
 def main() -> None:
