@@ -54,6 +54,31 @@ LISTENERS: list[Listener] = [
         url="https://bachtrack.com/de_DE/search-events/medium=1/country=5",
         emoji="🇩🇪",
     ),
+    Listener(
+        name="rachmaninoff",
+        url="https://bachtrack.com/de_DE/search-events/composer=85",
+        emoji="🎹",
+    ),
+    Listener(
+        name="dvorak",
+        url="https://bachtrack.com/de_DE/search-events/composer=38",
+        emoji="🎹",
+    ),
+    Listener(
+        name="ray_chen",
+        url="https://bachtrack.com/de_DE/search-events/performer=17568",
+        emoji="🎻",
+    ),
+    Listener(
+        name="hilary_hahn",
+        url="https://bachtrack.com/de_DE/search-events/performer=102",
+        emoji="🎻",
+    ),
+    Listener(
+        name="holst_diePlaneten",
+        url="https://bachtrack.com/de_DE/search-events/work=7161",
+        emoji="🎹",
+    ),
     # Example for adding more:
     # Listener(name="bruckner_nrw", url="https://bachtrack.com/de_DE/search-events/composer=85;region=146"),
 ]
@@ -298,10 +323,7 @@ def fetch_program(event_url: str) -> str:
 def _discord_message(listener: Listener, event: EventRef, program: str) -> str:
     title = (event.title or "").strip() or "(unbekannter Titel)"
     header = (
-        f"----------------------------------------\n"
-        f"{datetime.now().strftime('%d-%m-%Y %H:%M')}\n"
-        f"----------------------------------------\n"
-        f"{listener.emoji} **Neues Konzert** ({listener.name})\n"
+        f"{listener.emoji} *Neues Konzert* ({listener.name})\n"
         f"**{title}**\n"
         f"{event.url}"
     )
