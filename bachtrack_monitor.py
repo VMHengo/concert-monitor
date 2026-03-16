@@ -37,6 +37,21 @@ LISTENERS: list[Listener] = [
         url="https://bachtrack.com/de_DE/search-events/medium=1/country=5",
         emoji="🇩🇪",
     ),
+    Listener(
+        name="UK",
+        url="https://bachtrack.com/de_DE/search-events/country=1",
+        emoji="🇬🇧",
+    ),
+    Listener(
+        name="USA",
+        url="https://bachtrack.com/de_DE/search-events/country=2",
+        emoji="🇺🇸",
+    ),
+    Listener(
+        name="Netherlands",
+        url="https://bachtrack.com/de_DE/search-events/country=25",
+        emoji="🇳🇱",
+    ),
     # Example for adding more:
     # Listener(name="bruckner_nrw", url="https://bachtrack.com/de_DE/search-events/composer=85;region=146"),
 ]
