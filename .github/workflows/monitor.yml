@@ -1,4 +1,4 @@
-name: Concert Monitor
+name: Bachtrack Monitor
 
 on:
   schedule:
@@ -30,11 +30,11 @@ jobs:
       - name: Install dependencies
         run: pip install -r requirements.txt
 
-      # 4️⃣ Run Sibelius/Bachtrack monitor
-      - name: Run sibelius_monitor.py
+      # 4️⃣ Run Bachtrack monitor
+      - name: Run bachtrack_monitor.py
         env:
           DISCORD_WEBHOOK: ${{ secrets.DISCORD_WEBHOOK }}
-        run: python sibelius_monitor.py
+        run: python bachtrack_monitor.py
 
       # 5️⃣ Pull latest changes to avoid divergence
       - name: Pull latest changes
