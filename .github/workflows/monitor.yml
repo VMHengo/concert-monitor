@@ -30,14 +30,11 @@ jobs:
       - name: Install dependencies
         run: pip install -r requirements.txt
 
-      # 4️⃣ Run your Python script
-      - name: Run monitor.py
+      # 4️⃣ Run Sibelius/Bachtrack monitor
+      - name: Run sibelius_monitor.py
         env:
           DISCORD_WEBHOOK: ${{ secrets.DISCORD_WEBHOOK }}
-          GMAIL_USER: ${{ secrets.GMAIL_USER }}
-          GMAIL_PASSWORD: ${{ secrets.GMAIL_PASSWORD }}
-          GMAIL_SUBJECT_KEYWORD: ${{ secrets.GMAIL_SUBJECT_KEYWORD }} # optional
-        run: python monitor.py
+        run: python sibelius_monitor.py
 
       # 5️⃣ Pull latest changes to avoid divergence
       - name: Pull latest changes
@@ -45,11 +42,11 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
-      # 6️⃣ Commit and push changes
-      - name: Commit and push events.json
+      # 6️⃣ Commit and push state files
+      - name: Commit and push state
         uses: stefanzweifel/git-auto-commit-action@v5
         with:
-          commit_message: Update events cache
+          commit_message: Update Sibelius events cache
           file_pattern: .          # commit all changes
           skip_dirty_check: false
         env:
