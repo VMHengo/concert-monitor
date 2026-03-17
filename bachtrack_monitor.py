@@ -71,6 +71,14 @@ class EventRef:
 
 
 LISTENERS: list[Listener] = [
+# -------
+# REGION
+# -------
+    Listener(
+        name="Deutschland",
+        url="https://bachtrack.com/de_DE/search-events/country=5",
+        emoji="🇩🇪",
+    ),
 # ---------
 # COMPOSERS
 # ---------
@@ -112,6 +120,11 @@ LISTENERS: list[Listener] = [
         url="https://bachtrack.com/de_DE/search-events/performer=1208;region=146",
         emoji="🎹",
     ),
+    Listener(
+        name="Yunchan Lim",
+        url="https://bachtrack.com/de_DE/search-events/performer=108981;region=146",
+        emoji="🎹",
+    ),
 #--------
 # PIECES
 #--------
@@ -120,6 +133,11 @@ LISTENERS: list[Listener] = [
         url="https://bachtrack.com/de_DE/search-events/work=7161;region=146",
         emoji="🎹",
     ),
+    Listener(
+        name="Sibelius - Symphonie Nr. 2",
+        url="https://bachtrack.com/de_DE/search-events/work=8559;region=146",
+        emoji="🎼",
+    )
     # Example for adding more:
     # Listener(name="bruckner_nrw", url="https://bachtrack.com/de_DE/search-events/composer=85;region=146"),
 ]
@@ -320,30 +338,6 @@ def is_similar(a: str, b: str, threshold: float = 0.6) -> bool:
     return SequenceMatcher(None, a, b).ratio() >= threshold
 
 
-def _split_program_items(program: str) -> list[str]:
-    program = (program or "").strip()
-    if not program:
-        return []
-
-    token_re = re.compile(r"(?:^| )([A-ZÀ-ÖØ-Ý][^,\n]{1,60},\s+[^,\n]{1,60})")
-    matches = list(token_re.finditer(program))
-    if len(matches) < 2:
-        return [program]
-
-    starts = [m.start(1) for m in matches]
-    starts.append(len(program))
-    out: list[str] = []
-
-    for i in range(len(starts) - 1):
-        chunk = program[starts[i]:starts[i + 1]].strip(" ,;-")
-        if chunk:
-            if is_favourite(chunk):
-                chunk = "❗ " + chunk
-            out.append(chunk)
-
-    return out or [program]
-
-
 def _trim_for_discord(text: str, limit: int = 1800) -> str:
     text = (text or "").strip()
     if len(text) <= limit:
@@ -351,7 +345,7 @@ def _trim_for_discord(text: str, limit: int = 1800) -> str:
     return text[: limit - 1].rstrip() + "…"
 
 
-def fetch_program(event_url: str) -> str:
+def fetch_program(event_url: str) -> list[str]:
     try:
         html = requests.get(
             event_url,
@@ -362,45 +356,43 @@ def fetch_program(event_url: str) -> str:
             },
         ).text
     except Exception:
-        return ""
+        return []
 
     soup = BeautifulSoup(html, "html.parser")
 
-    # Common-ish containers (Bachtrack markup can vary).
-    selectors = [
-        "#program",
-        "#programme",
-        "[id*='program']",
-        "[class*='program']",
-        "[class*='programme']",
-        "[data-testid*='program']",
-    ]
-    for sel in selectors:
-        el = soup.select_one(sel)
-        if el:
-            text = _soup_text(el)
-            if text and len(text) >= 20:
-                return text
+    # --- HIER FEHLTE ES ---
+    rows = soup.select("#tbody_listing-programme tr")
+    if DEBUG:
+        print(f"[fetch_program] found {len(rows)} rows in tbody_listing-programme")
 
-    # Heading-based fallback: find a header mentioning "Programm"/"Programme".
-    for h in soup.select("h1, h2, h3, h4"):
-        label = _soup_text(h).lower()
-        if "programm" in label or "programme" in label:
-            # Take the next meaningful block.
-            nxt = h.find_next(["div", "section", "p", "ul", "ol"])
-            if nxt:
-                text = _soup_text(nxt)
-                if text and len(text) >= 20:
-                    return text
+    program_items = []
 
-    return ""
+    for row in rows:
+        cols = row.select("td")
+        if len(cols) < 2:
+            continue
+
+        composer = cols[0].get_text(" ", strip=True)
+        work = cols[1].get_text(" ", strip=True)
+
+        if composer and work:
+            item = f"{composer} – {work}"
+
+            if is_favourite(item):
+                item = "❗ " + item
+
+            program_items.append(item)
+
+    if DEBUG:
+        print(f"[fetch_program] parsed items: {program_items}")
+
+    return program_items
 
 
-def _discord_message(listener: Listener, event: EventRef, program: str) -> str:
+def _discord_message(listener: Listener, event: EventRef, program: list[str]) -> str:
     title = (event.title or "").strip() or "(unbekannter Titel)"
     venue = (event.venue or "").strip() # Sicherstellen, dass es nicht None ist
     date = (event.date or "").strip()
-    print(date)
 
     header = (
         f"{listener.emoji} *Neues Konzert* ({listener.name})\n"
@@ -409,34 +401,32 @@ def _discord_message(listener: Listener, event: EventRef, program: str) -> str:
         f"📍 {venue if venue else 'Ort unbekannt'}\n"
         f"{event.url}"
     )
-    # ... restlicher Code
-
-    # Allow short alerts without the (often long) program block.
-    # Set BACHTRACK_DISCORD_INCLUDE_PROGRAM=0 to disable.
+    
     if not _env_truthy("BACHTRACK_DISCORD_INCLUDE_PROGRAM", default=True):
         return _trim_for_discord(header)
 
-    detail_program = (program or "").strip()
-    listing_program = (event.listing_program or "").strip()
-
-    # Prefer detail program; fall back to listing program.
-    primary = detail_program or listing_program
-    secondary = listing_program if detail_program and listing_program and detail_program != listing_program else ""
-
     blocks: list[str] = [header]
-    if primary:
-        items = _split_program_items(primary)
-        if len(items) > 12:
-            items = items[:12] + ["(weitere Stücke gekürzt)"]
-        pretty = "\n".join(f"- {it}" for it in items)
-        blocks.append("**Programm**\n" + pretty)
 
-    if secondary:
-        items2 = _split_program_items(secondary)
-        if len(items2) > 8:
-            items2 = items2[:8] + ["(weitere Stücke gekürzt)"]
-        pretty2 = "\n".join(f"- {it}" for it in items2)
-        blocks.append("**Programm (Listing)**\n" + pretty2)
+    if program:
+        items = program[:5]
+        if len(program) > 5:
+            items.append("(weitere Stücke gekürzt)")
+
+        pretty_lines = []
+        for it in items:
+            if it.startswith("❗ "):
+                it = it[2:]  # ❗ entfernen, wenn nötig
+                fav_prefix = "❗ "
+            else:
+                fav_prefix = ""
+
+            if "–" in it:
+                composer, work = map(str.strip, it.split("–", 1))
+                pretty_lines.append(f"- {fav_prefix}**{composer}**\n    {work}")
+            else:
+                pretty_lines.append(f"- {fav_prefix}{it}")
+
+        blocks.append("**Programm**\n" + "\n".join(pretty_lines))
 
     return _trim_for_discord("\n\n".join(blocks))
 
@@ -449,7 +439,20 @@ def run_listener(listener: Listener, state: dict) -> None:
         return
 
     listeners_state = state.setdefault("listeners", {})
-    seen_for_listener = listeners_state.get(listener.name)
+    seen_for_listener = listeners_state.get(listener.name, {})
+
+    for e in all_events:
+        program = fetch_program(e.url)  # <-- hier kommt jetzt immer dein Debug-Print
+        seen_for_listener[e.url] = {
+            "title": e.title,
+            "listing_program": e.listing_program,
+            "program": program,
+            "venue": e.venue,
+            "date": e.date,
+        }
+
+    # State speichern
+    listeners_state[listener.name] = seen_for_listener
 
     # Same methodology as before: first run records state, no spam.
     # Treat missing or empty state as first run to avoid spamming.
@@ -471,30 +474,32 @@ def run_listener(listener: Listener, state: dict) -> None:
 
     new = [e for e in all_events if e.url not in seen_for_listener]
     print(f"[{listener.name}] new events: {len(new)}")
-    if not new:
-        # Nothing new → sende das zuletzt bekannte Event.
-        if seen_for_listener:
-            try:
-                last_url, last_info = next(reversed(seen_for_listener.items()))
-            except StopIteration:
-                return
-            if "-event/" not in str(last_url):
-                print(
-                    f"[{listener.name}] last known url doesn't look like an *-event url, skipping test alert: {last_url}"
-                )
-                return
-            title = str(last_info.get("title") or "").strip() or "(unbekannter Titel)"
-            program = str(last_info.get("program") or "")
-            listing_program = str(last_info.get("listing_program") or "")
-            venue = str(last_info.get("venue") or "")
-            last_event = EventRef(
-                title=title,
-                url=last_url,
-                listing_program=listing_program,
-                venue=str(last_info.get("venue") or ""),
-            )
-            send_discord(_discord_message(listener, last_event, program), DISCORD_WEBHOOK)
-        return None
+
+    # if not new:
+    #     # Nothing new → sende das zuletzt bekannte Event.
+    #     if seen_for_listener:
+    #         try:
+    #             last_url, last_info = next(reversed(seen_for_listener.items()))
+    #         except StopIteration:
+    #             return
+    #         if "-event/" not in str(last_url):
+    #             print(
+    #                 f"[{listener.name}] last known url doesn't look like an *-event url, skipping test alert: {last_url}"
+    #             )
+    #             return
+    #         title = str(last_info.get("title") or "").strip() or "(unbekannter Titel)"
+    #         program = last_info.get("program") or []
+    #         if isinstance(program, str):
+    #             program = [program]
+    #         listing_program = str(last_info.get("listing_program") or "")
+    #         venue = str(last_info.get("venue") or "")
+    #         last_event = EventRef(
+    #             title=title,
+    #             url=last_url,
+    #             listing_program=listing_program,
+    #             venue=str(last_info.get("venue") or ""),
+    #         )
+    #     return None
 
     for e in new:
         program = fetch_program(e.url)
@@ -536,10 +541,12 @@ def send_all_from_state():
                 venue=data.get("venue", ""),
                 date=data.get("date", "")
             )
-            program = data.get("program", "")
+            program = data.get("program", "") or[]
+            if isinstance(program, str):
+                program = [program]
             
             # Nachricht generieren und senden
-            msg = _discord_message(listener_obj, event, program)
+            msg = _discord_message(listener_obj , event, program)
             send_discord(msg, DISCORD_WEBHOOK)
             
             # Kurze Pause, um Discord Rate-Limits zu vermeiden
@@ -558,7 +565,7 @@ def main() -> None:
 
 if __name__ == "__main__":
     # Option A: Normaler Monitor-Betrieb
-    # main()
+    main()
 
     # Option B: Einmalig alles aus dem Speicher senden
-    send_all_from_state()
+    # send_all_from_state()
