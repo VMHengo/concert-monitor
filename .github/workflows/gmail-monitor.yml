@@ -29,7 +29,7 @@ jobs:
 
       - name: Run gmail_monitor.py
         env:
-          DISCORD_WEBHOOK_BACHTRACK: ${{ secrets.DISCORD_WEBHOOK_BACHTRACK }}
+          DISCORD_WEBHOOK_EMAIL: ${{ secrets.DISCORD_WEBHOOK_EMAIL }}
           GMAIL_USER: ${{ secrets.GMAIL_USER }}
           GMAIL_PASSWORD: ${{ secrets.GMAIL_PASSWORD }}
           GMAIL_SUBJECT_KEYWORD: ${{ secrets.GMAIL_SUBJECT_KEYWORD }} # optional

@@ -12,7 +12,7 @@ GMAIL_STATE_FILE = os.getenv("GMAIL_STATE_FILE", "gmail_state.json")
 GMAIL_USER = os.getenv("GMAIL_USER")
 GMAIL_PASSWORD = os.getenv("GMAIL_PASSWORD")
 GMAIL_SUBJECT_KEYWORD = os.getenv("GMAIL_SUBJECT_KEYWORD", "Ananas")
-
+DISCORD_WEBHOOK = os.getenv("DISCORD_WEBHOOK_EMAIL")
 
 def load_last_gmail_uid() -> int | None:
     if not os.path.exists(GMAIL_STATE_FILE):

@@ -6,11 +6,14 @@ from datetime import datetime
 from dataclasses import dataclass
 from urllib.parse import urljoin
 from urllib.parse import urlparse
+from difflib import SequenceMatcher
+import re
 
 import requests
 from bs4 import BeautifulSoup
 
 from discord_notify import send_discord
+from gmail_monitor import DISCORD_WEBHOOK
 
 BACHTRACK_BASE_URL = "https://bachtrack.com"
 STATE_FILE = os.getenv("BACHTRACK_STATE_FILE", "bachtrack_state.json")
@@ -20,7 +23,29 @@ USER_AGENT = os.getenv(
     "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
     "(KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36",
 )
+DISCORD_WEBHOOK = os.getenv("DISCORD_WEBHOOK_BACHTRACK")
 
+def load_favourites(path="favourites.txt") -> list[str]:
+    try:
+        with open(path, encoding="utf-8") as f:
+            return [line.strip() for line in f if line.strip()]
+    except Exception:
+        return []
+
+def normalize(text: str) -> str:
+    text = text.lower()
+
+    # Sonderzeichen entfernen
+    text = re.sub(r"[^\w\s]", " ", text)
+
+    # Wörter sortieren → Reihenfolge egal
+    words = text.split()
+    words.sort()
+
+    return " ".join(words)
+
+FAVOURITES = load_favourites()
+FAVOURITES_NORM = [normalize(f) for f in FAVOURITES]
 
 def _env_truthy(name: str, default: bool = False) -> bool:
     val = os.getenv(name)
@@ -46,38 +71,52 @@ class EventRef:
 
 
 LISTENERS: list[Listener] = [
+# ---------
+# COMPOSERS
+# ---------
     Listener(
-        name="sibelius_nrw",
+        name="Jean Sibelius",
         url="https://bachtrack.com/de_DE/search-events/composer=101;region=146",
         emoji="🎻",
     ),
     Listener(
-        name="deutschland_neu",
-        url="https://bachtrack.com/de_DE/search-events/medium=1/country=5",
-        emoji="🇩🇪",
-    ),
-    Listener(
-        name="rachmaninoff",
+        name="Sergeij Rachmaninoff",
         url="https://bachtrack.com/de_DE/search-events/composer=85;region=146",
         emoji="🎹",
     ),
     Listener(
-        name="dvorak",
+        name="Antonin Dvorak",
         url="https://bachtrack.com/de_DE/search-events/composer=38;region=146",
         emoji="🎹",
     ),
+# ----------
+# PERFORMERS
+# ----------
     Listener(
-        name="ray_chen",
+        name="Ray Chen",
         url="https://bachtrack.com/de_DE/search-events/performer=17568;region=146",
         emoji="🎻",
     ),
     Listener(
-        name="hilary_hahn",
+        name="Hilary Hahn",
         url="https://bachtrack.com/de_DE/search-events/performer=102;region=146",
         emoji="🎻",
     ),
     Listener(
-        name="holst_diePlaneten",
+        name="Augustin Hadelich",
+        url="https://bachtrack.com/de_DE/search-events/performer=7009;region=146",
+        emoji="🎻",
+    ),
+    Listener(
+        name="Martha Argerich",
+        url="https://bachtrack.com/de_DE/search-events/performer=1208;region=146",
+        emoji="🎹",
+    ),
+#--------
+# PIECES
+#--------
+    Listener(
+        name="Holst - Die Planeten",
         url="https://bachtrack.com/de_DE/search-events/work=7161;region=146",
         emoji="🎹",
     ),
@@ -272,16 +311,20 @@ def _soup_text(el) -> str:
     return re.sub(r"\s+", " ", el.get_text(" ", strip=True)).strip()
 
 
+def is_favourite(item: str) -> bool:
+    norm_item = normalize(item)
+    return any(is_similar(norm_item, fav) for fav in FAVOURITES_NORM)
+
+
+def is_similar(a: str, b: str, threshold: float = 0.6) -> bool:
+    return SequenceMatcher(None, a, b).ratio() >= threshold
+
+
 def _split_program_items(program: str) -> list[str]:
-    """
-    Try to split a flattened program string into readable items.
-    Bachtrack listing snippets often look like: "Composer, Name Work ... Composer, Name Work ..."
-    """
     program = (program or "").strip()
     if not program:
         return []
 
-    # Split on likely composer tokens like "Surname, Firstname"
     token_re = re.compile(r"(?:^| )([A-ZÀ-ÖØ-Ý][^,\n]{1,60},\s+[^,\n]{1,60})")
     matches = list(token_re.finditer(program))
     if len(matches) < 2:
@@ -290,10 +333,14 @@ def _split_program_items(program: str) -> list[str]:
     starts = [m.start(1) for m in matches]
     starts.append(len(program))
     out: list[str] = []
+
     for i in range(len(starts) - 1):
-        chunk = program[starts[i] : starts[i + 1]].strip(" ,;-")
+        chunk = program[starts[i]:starts[i + 1]].strip(" ,;-")
         if chunk:
+            if is_favourite(chunk):
+                chunk = "❗ " + chunk
             out.append(chunk)
+
     return out or [program]
 
 
@@ -353,9 +400,7 @@ def _discord_message(listener: Listener, event: EventRef, program: str) -> str:
     title = (event.title or "").strip() or "(unbekannter Titel)"
     venue = (event.venue or "").strip() # Sicherstellen, dass es nicht None ist
     date = (event.date or "").strip()
-
-    # Debug: Print direkt vor dem Zusammenbau der Nachricht
-    print(f"DEBUG Discord Message: Venue is '{venue}'") 
+    print(date)
 
     header = (
         f"{listener.emoji} *Neues Konzert* ({listener.name})\n"
@@ -426,34 +471,34 @@ def run_listener(listener: Listener, state: dict) -> None:
 
     new = [e for e in all_events if e.url not in seen_for_listener]
     print(f"[{listener.name}] new events: {len(new)}")
-    # if not new:
-    #     # Nothing new → sende das zuletzt bekannte Event.
-    #     if seen_for_listener:
-    #         try:
-    #             last_url, last_info = next(reversed(seen_for_listener.items()))
-    #         except StopIteration:
-    #             return
-    #         if "-event/" not in str(last_url):
-    #             print(
-    #                 f"[{listener.name}] last known url doesn't look like an *-event url, skipping test alert: {last_url}"
-    #             )
-    #             return
-    #         title = str(last_info.get("title") or "").strip() or "(unbekannter Titel)"
-    #         program = str(last_info.get("program") or "")
-    #         listing_program = str(last_info.get("listing_program") or "")
-    #         venue = str(last_info.get("venue") or "")
-    #         last_event = EventRef(
-    #             title=title,
-    #             url=last_url,
-    #             listing_program=listing_program,
-    #             venue=str(last_info.get("venue") or ""),
-    #         )
-    #         send_discord(_discord_message(listener, last_event, program))
-    #     return
+    if not new:
+        # Nothing new → sende das zuletzt bekannte Event.
+        if seen_for_listener:
+            try:
+                last_url, last_info = next(reversed(seen_for_listener.items()))
+            except StopIteration:
+                return
+            if "-event/" not in str(last_url):
+                print(
+                    f"[{listener.name}] last known url doesn't look like an *-event url, skipping test alert: {last_url}"
+                )
+                return
+            title = str(last_info.get("title") or "").strip() or "(unbekannter Titel)"
+            program = str(last_info.get("program") or "")
+            listing_program = str(last_info.get("listing_program") or "")
+            venue = str(last_info.get("venue") or "")
+            last_event = EventRef(
+                title=title,
+                url=last_url,
+                listing_program=listing_program,
+                venue=str(last_info.get("venue") or ""),
+            )
+            send_discord(_discord_message(listener, last_event, program), DISCORD_WEBHOOK)
+        return None
 
     for e in new:
         program = fetch_program(e.url)
-        send_discord(_discord_message(listener, e, program))
+        send_discord(_discord_message(listener, e, program), DISCORD_WEBHOOK)
         seen_for_listener[e.url] = {
             "title": e.title,
             "listing_program": e.listing_program,
@@ -464,6 +509,46 @@ def run_listener(listener: Listener, state: dict) -> None:
         print(f"seen_for_listener: {seen_for_listener}")
 
 
+def send_all_from_state():
+    """Liest den kompletten State und sendet jedes gespeicherte Event an Discord."""
+    state = _load_state()
+    listeners_state = state.get("listeners", {})
+
+    if not listeners_state:
+        print("Der State ist leer oder konnte nicht geladen werden.")
+        return
+
+    for listener_name, events_dict in listeners_state.items():
+        # Wir suchen das passende Listener-Objekt für das Emoji
+        listener_obj = next((l for l in LISTENERS if l.name == listener_name), None)
+        if not listener_obj:
+            # Fallback, falls der Listener aus der Liste gelöscht wurde
+            listener_obj = Listener(name=listener_name, url="", emoji="🎶")
+
+        print(f"Sende Events für Listener: {listener_name} ({len(events_dict)} Events)")
+
+        for url, data in events_dict.items():
+            # Wir bauen ein temporäres EventRef Objekt aus den JSON-Daten
+            event = EventRef(
+                title=data.get("title", ""),
+                url=url,
+                listing_program=data.get("listing_program", ""),
+                venue=data.get("venue", ""),
+                date=data.get("date", "")
+            )
+            program = data.get("program", "")
+            
+            # Nachricht generieren und senden
+            msg = _discord_message(listener_obj, event, program)
+            send_discord(msg, DISCORD_WEBHOOK)
+            
+            # Kurze Pause, um Discord Rate-Limits zu vermeiden
+            import time
+            time.sleep(0.5)
+
+    print("Fertig! Alle Events wurden gesendet.")
+
+
 def main() -> None:
     state = _load_state()
     for listener in LISTENERS:
@@ -472,5 +557,8 @@ def main() -> None:
 
 
 if __name__ == "__main__":
-    main()
+    # Option A: Normaler Monitor-Betrieb
+    # main()
 
+    # Option B: Einmalig alles aus dem Speicher senden
+    send_all_from_state()
