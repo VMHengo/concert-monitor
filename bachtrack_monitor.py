@@ -1,7 +1,6 @@
 import json
 import os
 import re
-import datetime
 from datetime import datetime
 from dataclasses import dataclass
 from urllib.parse import urljoin
@@ -74,11 +73,6 @@ LISTENERS: list[Listener] = [
 # -------
 # REGION
 # -------
-    Listener(
-        name="Deutschland",
-        url="https://bachtrack.com/de_DE/search-events/country=5",
-        emoji="🇩🇪",
-    ),
 # ---------
 # COMPOSERS
 # ---------
@@ -567,5 +561,7 @@ if __name__ == "__main__":
     # Option A: Normaler Monitor-Betrieb
     main()
 
+    now = datetime.now().hour 
     # Option B: Einmalig alles aus dem Speicher senden
-    # send_all_from_state()
+    if  14 <= now <= 16:
+        send_all_from_state()
