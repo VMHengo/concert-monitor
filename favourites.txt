@@ -25,9 +25,9 @@ Rachmaninoff, Rhapsodie über ein Thema von Paganini
 Saint-Saëns, Symphonie Nr. 3
 Saint-Saëns, Violinkonzert Nr. 3
 Saint-Saëns, Klavierkonzert Nr. 2
-Sibelius, Symphonie Nr. 2
-Sibelius, Symphonie Nr. 5
-Sibelius, Violinkonzert in d, Op. 77
+Jean Sibelius, Symphonie Nr. 2
+Jean Sibelius, Symphonie Nr. 5
+Jean Sibelius, Violinkonzert in d, Op. 77
 Tschaikowski, Serenade für Streicher
 Tschaikowski, Symphonie Nr. 5
 Vaughan Williams, Fantasie über ein Thema von Thomas Tallis
