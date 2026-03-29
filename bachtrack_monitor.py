@@ -563,5 +563,5 @@ if __name__ == "__main__":
 
     now = datetime.now().hour 
     # Option B: Einmalig alles aus dem Speicher senden
-    if  15 <= now <= 16:
+    if  17 <= now < 18:
         send_all_from_state()
